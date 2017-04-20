@@ -1,0 +1,222 @@
+﻿;================================================
+;RANDSELECT関数
+;------------------------------------------------
+;■概要
+;	呼び出し可能な関数からn個抽選して呼び出す関数です。
+;	IF文による分岐と、RANDによるランダム選択を同時に実現します。
+;------------------------------------------------
+;■その他の要求事項
+;	制御に、広域変数（TFLAG等の予約変数でも可）または式中関数が1個必要です。
+;	サンプルコードではERHファイルが用意できないので、式中関数で代用しています。
+;================================================
+
+
+;================================================
+;使用サンプルコード
+;================================================
+@SAMPLE
+;引数の#に、RANDの結果が入ります。
+;2回、抽選を行います。
+PRINTFORMW 2連続で抽選します。
+CALL RANDSELECT("EVENT#", 2)
+
+;第二引数を省略すると1回だけ抽選します。
+PRINTFORMW 1回だけ抽選しなおします。
+CALL RANDSELECT("EVENT#")
+
+
+;------------------------------------------------
+;呼び出し対象
+;	関数名と関数の最初に制約事項があります
+;------------------------------------------------
+;必ず関数の最初にSIF RETURN文を入れてください。
+;1を返すと、抽選リストに登録されます
+;0を返すと、リストに
+;------------------------------------------------
+
+@EVENT1
+SIF CAN_CALL()
+	RETURN 1
+PRINTFORMW No.1 いつでもOKなイベントの例。
+
+@EVENT2
+SIF CAN_CALL()
+	RETURN RAND:10 == 0
+PRINTFORML No.2 珍しいイベントの例。
+PRINTFORML 　　なお「抽選リストに載る確率が10％」なので、実際に呼び出される確率はさらに低い。
+PRINTFORMW 　　RETURN文の中身は、単純な可否の記述に留めることを推奨します。
+
+@EVENT3
+SIF CAN_CALL()
+	RETURN 0
+PRINTFORMW No.3 中身が作りかけで呼ばれたくない例。完成したら条件式を設定すること。
+
+@EVENT10
+SIF CAN_CALL()
+	RETURN 1
+PRINTFORML No.10 番号は連番でなくてよい。
+PRINTFORMW 　　10番台は〇〇系、20番台は△△系、といったような管理体系にも使えます。
+
+@EVENT98
+;PRINTL コメントアウトを解除すると、関数本体が警告を発します。
+SIF CAN_CALL()
+	RETURN 1
+PRINTFORMW No.98 関数冒頭にあるコメントアウトを解除すると、この文章は絶対に呼ばれません。
+
+@EVENT100
+SIF CAN_CALL()
+	RETURN 1
+PRINTFORML No.100 登録上限数に到達した。デバッグモード時には、関数本体が警告を発します。
+PRINTFORMW 　　非デバッグモードでは使用可能ですが、関数本体の_FUNCLISTを拡張することをお勧めします。
+
+@EVENT101
+SIF CAN_CALL()
+	RETURN 1
+PRINTFORML No.101 登録上限数をさらに超えた番号は、呼び出されません。
+PRINTFORMW 　　この番号が表示されているということは、登録上限数を拡張しましたね。
+
+;================================================
+;関数本体
+;------------------------------------------------
+;■引数
+;	_FUNCNAME_ as str
+;		関数名。RANDが入る部分を#にする。
+;		#は1～100まで利用可能（RANDSELECT関数の中で_FUNCLISTを拡張すると増やせます。
+;	_TIMES_ as int
+;		繰り返し抽選回数。通常は1回のみで、重複抽選は行いません。
+;------------------------------------------------
+;■戻り値
+;	呼び出せたら、最後に呼び出した関数の戻り値、無理なら０
+;================================================
+@RANDSELECT(_FUNCNAME = "", _TIMES = 1)
+#DIMS _FUNCNAME	; 関数名。必ず_TAG_で指定した文字を1個だけ含む
+#DIMS _TAG_ = "#"	; RANDで置き換える文字定数
+#DIM _TIMES		; 繰り返し抽選回数。必ず1以上
+
+#DIM _FUNCLIST, 100	; 呼び出し可能な番号を登録する台帳
+#DIM _LISTSIZE		; 台帳のインデックス数
+#DIM _MAXTIMES		; 呼び出し可能数
+#DIM _FUNCINDEX		; 呼び出した関数の台帳番号
+
+#DIM _COUNT			; FORループのカウンタ
+#DIM _RESULT		; RESUTL変数の一時退避
+#DIM _LINECOUNT		; PRINTL監視用
+
+;変数の初期化
+VARSET _FUNCLIST, -1
+_LISTSIZE = VARSIZE("_FUNCLIST")
+
+;動作開始前チェック。使い方が違うものはとにかく落とす
+; THROW: 確実に動作しないものを検出すると、強制終了する
+;ASSERT: 別に違反しても動作はするけど、推奨しない内容を弾く
+
+SIF STRCOUNT(_FUNCNAME, _TAG_) == 0
+	THROW %_TAG_%を含んだ関数名を指定してください。
+SIF _TIMES <= 0
+	THROW 抽選回数は1回以上を指定してください。
+
+ASSERT STRLENSU(_TAG_) >= 1
+ASSERT 1 == STRCOUNT(_FUNCNAME, _TAG_)
+ASSERT _TIMES <= _LISTSIZE - 1
+
+;FORループで抽選対象を調べるので、カウンタ変数を関数名に組み込む
+_FUNCNAME '= REPLACE(_FUNCNAME, _TAG_, "\{_COUNT\}")
+
+;RESULT退避
+_RESULT = RESULT
+
+;呼び出し可能数をリセット
+_MAXTIMES = 0
+
+;問い合わせ中はPRINT無効（デバッグモードは確認のためPRINT有効）
+SKIPDISP (__LINE__ == 0)
+
+;現在の表示行数を取得
+_LINECOUNT = LINECOUNT
+
+;問い合わせ用の式中関数を有効にする
+CALLF CAN_CALL("SET")
+;広域変数や登録変数の場合は、ここで1を設定する
+;TFLAG:0 = 1
+
+FOR _COUNT, 1, _LISTSIZE + 1
+	RESULT = -1
+	TRYCCALLFORM %STRFORM(_FUNCNAME)%
+		SELECTCASE RESULT
+			CASE IS > 0
+				ASSERT _COUNT < _LISTSIZE ;呼び出し可能数の上限未満での使用を推奨
+				;抽選対象なので登録する
+				_FUNCLIST:(_MAXTIMES) = _COUNT
+				_MAXTIMES += 1
+			CASE 0
+				;呼び出し対象以外なので何もしない。
+			CASEELSE
+				ASSERT 0 ; 負値が戻る問い合わせは想定しない
+		ENDSELECT
+	CATCH
+		;見つからないときは、何もしない
+	ENDCATCH
+NEXT
+
+;問い合わせ用変数を無効にする
+CALLF CAN_CALL("RESET")
+;広域変数や登録変数の場合は、ここで0を設定する
+;TFLAG:0 = 0
+
+ASSERT _LINECOUNT == LINECOUNT
+
+;問い合わせ終了、PRINT有効
+SKIPDISP 0
+
+;RESULTを戻しておく
+RESULT = _RESULT
+
+;呼び出し可能なものがなければ戻る
+SIF _MAXTIMES == 0
+	RETURN 0
+
+DO
+	;関数名_FUNCNAMEの実体に{_COUNT}が含まれているため、_COUNTの変更だけで関数名が作れる
+	_FUNCINDEX = RAND:_MAXTIMES
+	_COUNT = _FUNCLIST:_FUNCINDEX
+	;1度呼び出しているので、CALLFORMで呼び出す
+	CALLFORM %STRFORM(_FUNCNAME)%
+	
+	;抽選対象をリストから除去
+	ARRAYREMOVE _FUNCLIST, _FUNCINDEX, 1
+	
+	;抽選したので1回分減らす
+	_TIMES -= 1
+	_MAXTIMES -= 1
+LOOP _TIMES >= 1 && _MAXTIMES >= 1 ;抽選回数と抽選候補数が両方とも残っていれば、再抽選
+
+;最後に呼び出した関数のRESULTをそのまま返す
+RETURN RESULT
+
+;------------------------------------------------
+;広域変数を使わない場合は、制御に式中間数が必要
+;	TFLAG等の予約変数でも構いません
+;------------------------------------------------
+@CAN_CALL(_MODE = "")
+#FUNCTION
+#DIMS _MODE
+#DIM _ASK = 0
+
+;マジックナンバー（ここではSET/RESET）の使用は、一般には好まれません。
+;ただし、広域変数をこういった機能分岐のためだけに宣言するのも無駄なので
+;文字列をそのまま定数として使用しています。
+SELECTCASE _MODE
+	CASE ""
+		;引数省略時は何もしない
+	CASE "SET"
+		;抽選リストの作成時
+		_ASK = 1
+	CASE "RESET"
+		;抽選リストの作成完了など
+		_ASK = 0
+	CASEELSE
+		;引数分岐で想定しない領域が来た場合は、積極的にTHROWすることをお勧めします。
+		THROW 規定外の引数が渡されたため、強制終了します。
+ENDSELECT
+
+RETURNF _ASK
