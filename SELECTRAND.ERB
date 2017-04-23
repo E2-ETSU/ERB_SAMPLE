@@ -15,16 +15,30 @@
 ;使用サンプルコード
 ;================================================
 @SAMPLE
-;引数の#に、RANDの結果が入ります。
-;2回、抽選を行います。
-PRINTFORMW 2連続で抽選します。同じものが再抽選されることはありません。
-CALL SELECTRAND("EVENT#", 100, 2)
-
+;引数の#に、1～100までで抽選した結果の数値が入ります。
+PRINTFORMW @EVENT1～@EVENT100の中から、呼び出し可能なものを抽出します。
+PRINTFORML 抽出したものについて1個だけ抽選して呼び出します。
+CALL SELECTRAND("EVENT#")
 DRAWLINE
 
-;第二引数を省略すると1回だけ抽選します。
-PRINTFORMW 1回だけ抽選しなおします。
-CALL SELECTRAND("EVENT#")
+;#の下限値は1固定ですが、上限値は変更できます。
+PRINTFORMW @EVENT1～@EVENT20の中から抽出して、1個だけ抽選して呼び出します。
+CALL SELECTRAND("EVENT#", 20)
+DRAWLINE
+
+;#の上限値を100より増やす場合は、@SELECTRAND内の変数を拡張してください。
+;	#DIM _FUNCLIST, 100
+;上記の100を、例えば1000にすると、最大で# = 1～1000まで対応します。
+
+;また、第二引数を省略すると、初期値100が入ってしまいます。
+;拡張した際は、必ず第二引数も与えてください。
+;CALL SELECTRAND("EVENT#", 500)
+;	※@SELECTRAND関数の引数_RANDSIZEについて、初期値を弄ってしまうのも可。
+
+;また、重複しないn個を抽選することも可能です。
+PRINTFORMW 二回連続で抽選します。同じものが再抽選されることはありません。
+CALL SELECTRAND("EVENT#", 100, 2)
+DRAWLINE
 
 
 ;------------------------------------------------
@@ -38,6 +52,15 @@ CALL SELECTRAND("EVENT#")
 ;1を返すと、抽選リストに登録されます
 ;0を返すと、リストに
 ;------------------------------------------------
+
+@EVENT0
+;この関数は"呼ばれません"
+SIF CAN_CALL()
+	RETURN 1
+PRINTFORML SELECTRANDで呼ばれるのは、# = 1～の関数名です。
+PRINTFORML 0番は呼ばれないため、例えばテンプレート関数として利用できます。
+PRINTFORML この関数を丸ごとコピー＆ペースト
+PRINTFORMW →　関数名末尾の0を、1～_RANDSIZE（引数）までの数値に変更してご使用ください。
 
 @EVENT1
 SIF CAN_CALL()
@@ -118,14 +141,15 @@ _LISTSIZE = VARSIZE("_FUNCLIST")
 ;ASSERT: 別に違反しても動作はするけど、推奨しない内容を弾く
 
 SIF STRCOUNT(_FUNCNAME, _TAG_) == 0
-	THROW %_TAG_%を含んだ関数名を指定してください。
-SIF 0 == INRANGE(_RANDSIZE, 2, _LISTSIZE)
-	THROW _RANDSIZEは2～{_LISTSIZE}までの値にしてください。大きな_RANDSIZEが必要な場合は_LISTSIZEを見直してください。
+	THROW "%_TAG_%"を含んだ関数名を指定してください。
+SIF _RANDSIZE <= _LISTSIZE
+	THROW _RANDSIZEは{_LISTSIZE}以下の値にしてください。大きな_RANDSIZEが必要な場合は_LISTSIZEの要素数を増やしてください。
 SIF _TIMES <= 0
 	THROW 抽選回数は1回以上を指定してください。
 
 ASSERT STRLENSU(_TAG_) >= 1 ; _TAG_は空文字列を指定しないでください
 ASSERT 1 == STRCOUNT(_FUNCNAME, _TAG_) ; 2個以上_TAG_文字がある関数名は、動作可能ですが、意図していません。
+ASSERT _RANDSIZE >= 2 ; RANDの仕様上、0と1は必ず0が帰ってくるのでランダムにならない。
 ASSERT _TIMES <= _RANDSIZE ; _RANDSIZEより大きな回数を指定しても無駄です。
 
 ;FORループで抽選対象を調べるので、カウンタ変数を関数名に組み込む
